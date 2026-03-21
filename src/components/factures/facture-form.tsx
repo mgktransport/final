@@ -269,7 +269,7 @@ export function FactureForm({
   const updateMutation = useUpdateFacture();
 
   const montantHT = watch("montantHT") || 0;
-  const tauxTVA = watch("tauxTVA") || 20;
+  const tauxTVA = watch("tauxTVA") ?? 20; // Use ?? instead of || to allow 0 value
   const montantTVA = montantHT * (tauxTVA / 100);
   const montantTTC = montantHT + montantTVA;
 
