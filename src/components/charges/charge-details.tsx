@@ -16,61 +16,21 @@ import { useCharge } from "@/hooks/use-queries"
 
 // Types
 type TypeCharge = 'VEHICULE' | 'SOCIETE'
-type CategorieCharge =
-  | 'CARBURANT'
-  | 'ASSURANCE_VEHICULE'
-  | 'ENTRETIEN_VEHICULE'
-  | 'REPARATION'
-  | 'VISITE_TECHNIQUE'
-  | 'PNEUS'
-  | 'PEAGE'
-  | 'STATIONNEMENT'
-  | 'AMENDE'
-  | 'ACHAT_VEHICULE'
-  | 'LOYER'
-  | 'ELECTRICITE'
-  | 'EAU'
-  | 'TELEPHONE_INTERNET'
-  | 'SALAIRES'
-  | 'CHARGES_SOCIALES'
-  | 'ASSURANCE_SOCIETE'
-  | 'COMPTABILITE'
-  | 'FOURNITURES_BUREAU'
-  | 'PUBLICITE'
-  | 'FORMATION'
-  | 'AUTRE'
-
 type SourceCharge = 'SALAIRE' | 'PLEIN_CARBURANT' | 'ENTRETIEN' | 'ACHAT_VEHICULE' | 'ECHEANCE_CREDIT' | 'MANUEL'
+
+// Interface pour les catégories
+interface CategorieCharge {
+  id: string
+  code: string
+  nom: string
+  type: TypeCharge
+  automatique: boolean
+}
 
 // Labels
 const TYPE_CHARGE_LABELS: Record<TypeCharge, string> = {
   VEHICULE: 'Véhicule',
   SOCIETE: 'Société',
-}
-
-const CATEGORIE_LABELS: Record<CategorieCharge, string> = {
-  CARBURANT: 'Carburant',
-  ASSURANCE_VEHICULE: 'Assurance véhicule',
-  ENTRETIEN_VEHICULE: 'Entretien véhicule',
-  REPARATION: 'Réparation',
-  VISITE_TECHNIQUE: 'Visite technique',
-  PNEUS: 'Pneus',
-  PEAGE: 'Péage',
-  STATIONNEMENT: 'Stationnement',
-  AMENDE: 'Amende',
-  ACHAT_VEHICULE: 'Achat véhicule',
-  LOYER: 'Loyer',
-  ELECTRICITE: 'Électricité',
-  EAU: 'Eau',
-  TELEPHONE_INTERNET: 'Téléphone/Internet',
-  SALAIRES: 'Salaires',
-  CHARGES_SOCIALES: 'Charges sociales',
-  ASSURANCE_SOCIETE: 'Assurance société',
-  COMPTABILITE: 'Comptabilité',
-  FOURNITURES_BUREAU: 'Fournitures bureau',
-  PUBLICITE: 'Publicité',
-  FORMATION: 'Formation',
-  AUTRE: 'Autre',
 }
 
 const SOURCE_LABELS: Record<SourceCharge, string> = {
@@ -82,6 +42,25 @@ const SOURCE_LABELS: Record<SourceCharge, string> = {
   MANUEL: 'Saisie manuelle',
 }
 
+interface Charge {
+  id: string
+  type: TypeCharge
+  categorie: string
+  categorieLabel?: string  // Ajouté par l'API
+  description: string
+  montant: number
+  dateCharge: Date | string
+  vehiculeId?: string | null
+  vehicule?: { id: string; immatriculation: string; marque: string; modele: string } | null
+  automatique: boolean
+  sourceType?: SourceCharge | null
+  fournisseur?: string | null
+  numeroFacture?: string | null
+  notes?: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
 interface ChargeDetailsProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -90,6 +69,34 @@ interface ChargeDetailsProps {
 
 export function ChargeDetails({ open, onOpenChange, chargeId }: ChargeDetailsProps) {
   const { data: charge, isLoading, error, refetch } = useCharge(chargeId || "")
+  
+  // Charger les catégories depuis l'API pour le fallback
+  const [categories, setCategories] = React.useState<CategorieCharge[]>([])
+  
+  // Créer un map code -> nom pour l'affichage
+  const categorieLabels = React.useMemo(() => {
+    const map: Record<string, string> = {}
+    categories.forEach(cat => {
+      map[cat.code] = cat.nom
+    })
+    return map
+  }, [categories])
+
+  // Charger les catégories au montage
+  React.useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('/api/categories-charges')
+        const result = await response.json()
+        if (result.success) {
+          setCategories(result.data)
+        }
+      } catch (error) {
+        console.error("Erreur chargement catégories:", error)
+      }
+    }
+    fetchCategories()
+  }, [])
 
   // Refetch when dialog opens
   React.useEffect(() => {
@@ -97,6 +104,14 @@ export function ChargeDetails({ open, onOpenChange, chargeId }: ChargeDetailsPro
       refetch()
     }
   }, [open, chargeId, refetch])
+
+  // Fonction pour obtenir le nom de la catégorie
+  // Utilise d'abord le label de l'API, puis le map local
+  const getCategorieLabel = (chargeData: Charge | null) => {
+    if (!chargeData) return 'Non définie'
+    if (chargeData.categorieLabel) return chargeData.categorieLabel
+    return categorieLabels[chargeData.categorie] || chargeData.categorie || 'Non définie'
+  }
 
   if (!chargeId) return null
 
@@ -151,7 +166,7 @@ export function ChargeDetails({ open, onOpenChange, chargeId }: ChargeDetailsPro
               <h3 className="text-lg font-semibold">{charge.description}</h3>
               <div className="flex items-center gap-2 mt-1">
                 <Badge variant="outline">
-                  {CATEGORIE_LABELS[charge.categorie as CategorieCharge]}
+                  {getCategorieLabel(charge)}
                 </Badge>
               </div>
             </div>

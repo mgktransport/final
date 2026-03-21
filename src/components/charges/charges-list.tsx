@@ -44,61 +44,23 @@ import { ChargeDetails } from "./charge-details"
 
 // Types
 type TypeCharge = 'VEHICULE' | 'SOCIETE'
-type CategorieCharge =
-  | 'CARBURANT'
-  | 'ASSURANCE_VEHICULE'
-  | 'ENTRETIEN_VEHICULE'
-  | 'REPARATION'
-  | 'VISITE_TECHNIQUE'
-  | 'PNEUS'
-  | 'PEAGE'
-  | 'STATIONNEMENT'
-  | 'AMENDE'
-  | 'ACHAT_VEHICULE'
-  | 'LOYER'
-  | 'ELECTRICITE'
-  | 'EAU'
-  | 'TELEPHONE_INTERNET'
-  | 'SALAIRES'
-  | 'CHARGES_SOCIALES'
-  | 'ASSURANCE_SOCIETE'
-  | 'COMPTABILITE'
-  | 'FOURNITURES_BUREAU'
-  | 'PUBLICITE'
-  | 'FORMATION'
-  | 'AUTRE'
-
 type SourceCharge = 'SALAIRE' | 'PLEIN_CARBURANT' | 'ENTRETIEN' | 'ACHAT_VEHICULE' | 'ECHEANCE_CREDIT' | 'MANUEL'
+
+// Interface pour les catégories (auto + personnalisées)
+interface CategorieCharge {
+  id: string
+  code: string
+  nom: string
+  type: TypeCharge
+  description?: string | null
+  actif: boolean
+  automatique: boolean
+}
 
 // Labels
 const TYPE_CHARGE_LABELS: Record<TypeCharge, string> = {
   VEHICULE: 'Véhicule',
   SOCIETE: 'Société',
-}
-
-const CATEGORIE_LABELS: Record<CategorieCharge, string> = {
-  CARBURANT: 'Carburant',
-  ASSURANCE_VEHICULE: 'Assurance véhicule',
-  ENTRETIEN_VEHICULE: 'Entretien véhicule',
-  REPARATION: 'Réparation',
-  VISITE_TECHNIQUE: 'Visite technique',
-  PNEUS: 'Pneus',
-  PEAGE: 'Péage',
-  STATIONNEMENT: 'Stationnement',
-  AMENDE: 'Amende',
-  ACHAT_VEHICULE: 'Achat véhicule',
-  LOYER: 'Loyer',
-  ELECTRICITE: 'Électricité',
-  EAU: 'Eau',
-  TELEPHONE_INTERNET: 'Téléphone/Internet',
-  SALAIRES: 'Salaires',
-  CHARGES_SOCIALES: 'Charges sociales',
-  ASSURANCE_SOCIETE: 'Assurance société',
-  COMPTABILITE: 'Comptabilité',
-  FOURNITURES_BUREAU: 'Fournitures bureau',
-  PUBLICITE: 'Publicité',
-  FORMATION: 'Formation',
-  AUTRE: 'Autre',
 }
 
 const SOURCE_LABELS: Record<SourceCharge, string> = {
@@ -110,31 +72,11 @@ const SOURCE_LABELS: Record<SourceCharge, string> = {
   MANUEL: 'Manuel',
 }
 
-// Catégories automatiques (ne peuvent pas être ajoutées manuellement)
-const CATEGORIES_AUTOMATIQUES: CategorieCharge[] = [
-  'CARBURANT',
-  'ENTRETIEN_VEHICULE',
-  'SALAIRES',
-  'CHARGES_SOCIALES',
-  'ACHAT_VEHICULE',
-]
-
-// Catégories par type
-const CATEGORIES_VEHICULE: CategorieCharge[] = [
-  'CARBURANT', 'ASSURANCE_VEHICULE', 'ENTRETIEN_VEHICULE', 'REPARATION',
-  'VISITE_TECHNIQUE', 'PNEUS', 'PEAGE', 'STATIONNEMENT', 'AMENDE', 'ACHAT_VEHICULE',
-]
-
-const CATEGORIES_SOCIETE: CategorieCharge[] = [
-  'LOYER', 'ELECTRICITE', 'EAU', 'TELEPHONE_INTERNET', 'SALAIRES',
-  'CHARGES_SOCIALES', 'ASSURANCE_SOCIETE', 'COMPTABILITE',
-  'FOURNITURES_BUREAU', 'PUBLICITE', 'FORMATION', 'AUTRE',
-]
-
 interface Charge {
   id: string
   type: TypeCharge
-  categorie: CategorieCharge
+  categorie: string
+  categorieLabel?: string  // Ajouté par l'API
   description: string
   montant: number
   dateCharge: Date | string
@@ -223,6 +165,38 @@ export function ChargesList({
   const [showFilters, setShowFilters] = React.useState(true)
   const [detailsDialogOpen, setDetailsDialogOpen] = React.useState(false)
   const [selectedChargeId, setSelectedChargeId] = React.useState<string | null>(null)
+  
+  // Charger les catégories depuis l'API
+  const [categories, setCategories] = React.useState<CategorieCharge[]>([])
+  const [loadingCategories, setLoadingCategories] = React.useState(true)
+  
+  // Créer un map code -> nom pour l'affichage
+  const categorieLabels = React.useMemo(() => {
+    const map: Record<string, string> = {}
+    categories.forEach(cat => {
+      map[cat.code] = cat.nom
+    })
+    return map
+  }, [categories])
+
+  // Charger les catégories au montage
+  React.useEffect(() => {
+    const fetchCategories = async () => {
+      setLoadingCategories(true)
+      try {
+        const response = await fetch('/api/categories-charges')
+        const result = await response.json()
+        if (result.success) {
+          setCategories(result.data)
+        }
+      } catch (error) {
+        console.error("Erreur chargement catégories:", error)
+      } finally {
+        setLoadingCategories(false)
+      }
+    }
+    fetchCategories()
+  }, [])
 
   const handleViewDetails = (chargeId: string) => {
     setSelectedChargeId(chargeId)
@@ -251,39 +225,28 @@ export function ChargesList({
 
   // Filtrer les catégories selon le type sélectionné
   const categoriesOptions = React.useMemo(() => {
-    const all = [
-      { value: '', label: 'Toutes catégories' },
-    ]
+    const all = [{ value: '', label: 'Toutes catégories' }]
     
-    if (!filters.type) {
-      // Tous les types: afficher toutes les catégories
-      return [
-        ...all,
-        ...Object.entries(CATEGORIE_LABELS).map(([key, label]) => ({
-          value: key,
-          label,
-        })),
-      ]
-    }
-    
-    if (filters.type === 'VEHICULE') {
-      return [
-        ...all,
-        ...CATEGORIES_VEHICULE.map(key => ({
-          value: key,
-          label: CATEGORIE_LABELS[key],
-        })),
-      ]
+    let filteredCats = categories
+    if (filters.type) {
+      filteredCats = categories.filter(cat => cat.type === filters.type)
     }
     
     return [
       ...all,
-      ...CATEGORIES_SOCIETE.map(key => ({
-        value: key,
-        label: CATEGORIE_LABELS[key],
+      ...filteredCats.map(cat => ({
+        value: cat.code,
+        label: cat.nom,
       })),
     ]
-  }, [filters.type])
+  }, [filters.type, categories])
+
+  // Fonction pour obtenir le nom de la catégorie
+  // Utilise d'abord le label de l'API, puis le map local
+  const getCategorieLabel = (charge: Charge) => {
+    if (charge.categorieLabel) return charge.categorieLabel
+    return categorieLabels[charge.categorie] || charge.categorie || 'Non définie'
+  }
 
   return (
     <div className="space-y-4">
@@ -321,9 +284,10 @@ export function ChargesList({
             <Select 
               value={filters.categorie || 'all'} 
               onValueChange={(value) => setFilters({ ...filters, categorie: value === 'all' ? '' : value })}
+              disabled={loadingCategories}
             >
               <SelectTrigger className="w-full md:w-44">
-                <SelectValue placeholder="Catégorie" />
+                <SelectValue placeholder={loadingCategories ? "Chargement..." : "Catégorie"} />
               </SelectTrigger>
               <SelectContent>
                 {categoriesOptions.map((cat) => (
@@ -492,7 +456,7 @@ export function ChargesList({
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs">
-                      {CATEGORIE_LABELS[charge.categorie]}
+                      {getCategorieLabel(charge)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -525,13 +489,6 @@ export function ChargesList({
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
-                          {/* @ts-ignore */}
-                          {/* @ts-ignore */}
-                          {/* @ts-ignore */}
-                          {/* @ts-ignore */}
-                          {/* @ts-ignore */}
-                          {/* @ts-ignore */}
-                          {/* @ts-ignore */}
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                           </svg>
