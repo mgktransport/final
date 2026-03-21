@@ -1,0 +1,17 @@
+# Fichier .npmignore pour Render
+# Ignore les fichiers inutiles pour le déploiement
+
+.devcontainer/
+.github/
+.git/
+node_modules/
+.next/
+dev.log
+*.log
+.env.local
+.env.development
+.env.test
+
+# Keep Prisma and database
+!prisma/
+!db/
