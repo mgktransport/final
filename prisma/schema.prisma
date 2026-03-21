@@ -1,0 +1,681 @@
+// MGK Transport - Schéma de base de données complet
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ==================== UTILISATEURS & SÉCURITÉ ====================
+
+model Utilisateur {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  motDePasse        String
+  nom               String
+  prenom            String
+  role              Role     @default(ADMIN)
+  actif             Boolean  @default(true)
+  chauffeurId       String?  @unique  // Lien optionnel vers le chauffeur
+  chauffeur         Chauffeur? @relation(fields: [chauffeurId], references: [id])
+  mustChangePassword Boolean @default(false) // Forcer le changement de mot de passe à la première connexion
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  logs              Log[]
+}
+
+enum Role {
+  ADMIN           // Accès total
+  COMPTABLE       // Facturation + paiements
+  EXPLOITATION    // Chauffeurs + véhicules
+  CHAUFFEUR       // Interface chauffeur dédiée
+}
+
+model Log {
+  id           String   @id @default(cuid())
+  action       String
+  details      String?
+  utilisateurId String
+  utilisateur  Utilisateur @relation(fields: [utilisateurId], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+// ==================== CHAUFFEURS ====================
+
+model Chauffeur {
+  id                String   @id @default(cuid())
+  nom               String
+  prenom            String
+  cin               String   @unique
+  telephone         String
+  adresse           String?
+  numeroCNSS        String?   @unique            // N° CNSS (Numéro de la Caisse Nationale de Sécurité Sociale)
+  dateEmbauche      DateTime
+  dateFinContrat    DateTime?  // Date de fin de contrat (pour CDD)
+  typeContrat       TypeContrat
+  typeSalaire       TypeSalaire
+  montantSalaire    Float
+  montantCNSS       Float    @default(0)      // Montant CNSS mensuel
+  montantAssurance  Float    @default(0)      // Montant Assurance mensuel
+  ribCompte         String?                     // N° Compte Bancaire RIB 24 chiffres
+  actif             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  utilisateur       Utilisateur?  // Compte utilisateur associé
+  vehicules         Vehicule[]
+  salaires          Salaire[]
+  primes            Prime[]
+  avances           Avance[]
+  documents         DocumentChauffeur[]
+  tournées          Tournee[]
+  bulletinsPaie     BulletinPaie[]
+  exploitations     ExploitationService[]
+}
+
+enum TypeContrat {
+  CDI
+  CDD
+  JOURNALIER
+}
+
+enum TypeSalaire {
+  FIXE
+  HORAIRE
+  PAR_TOURNEE
+}
+
+model Salaire {
+  id            String   @id @default(cuid())
+  chauffeurId   String
+  chauffeur     Chauffeur @relation(fields: [chauffeurId], references: [id])
+  mois          Int
+  annee         Int
+  heuresTravaillees Float?
+  joursTravailles  Int?
+  montantBase   Float
+  montantPrimes Float   @default(0)
+  montantAvances Float  @default(0)
+  montantNet    Float
+  paye          Boolean  @default(false)
+  datePaiement  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([chauffeurId, mois, annee])
+}
+
+model Prime {
+  id            String   @id @default(cuid())
+  chauffeurId   String
+  chauffeur     Chauffeur @relation(fields: [chauffeurId], references: [id])
+  motif         String
+  montant       Float
+  date          DateTime
+  comptabilise  Boolean  @default(false)  // Marqué true quand inclus dans un salaire payé
+  createdAt     DateTime @default(now())
+}
+
+model Avance {
+  id            String   @id @default(cuid())
+  chauffeurId   String
+  chauffeur     Chauffeur @relation(fields: [chauffeurId], references: [id])
+  montant       Float
+  date          DateTime
+  rembourse     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model DocumentChauffeur {
+  id                String   @id @default(cuid())
+  chauffeurId       String
+  chauffeur         Chauffeur @relation(fields: [chauffeurId], references: [id])
+  type              String   // Code du type (enum ou personnalisé)
+  numero            String?
+  dateEmission      DateTime?  // Conservé pour compatibilité DB SQLite (non utilisé)
+  dateExpiration    DateTime?
+  fichier           String?
+  alerteEnvoyee     Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// Types de documents prédéfinis pour les chauffeurs
+enum TypeDocumentChauffeur {
+  PERMIS_CONDUIRE
+  ASSURANCE_CHAUFFEUR
+  VISITE_MEDICALE
+  CIN
+}
+
+// Types de documents personnalisés (configurables par l'utilisateur)
+model TypeDocumentPersonnalise {
+  id                String   @id @default(cuid())
+  code              String   @unique   // Code unique (ex: "ATTESTATION_FORMATION")
+  nom               String             // Nom affiché (ex: "Attestation de formation")
+  description       String?
+  categorie         String   @default("CHAUFFEUR")  // CHAUFFEUR ou VEHICULE
+  actif             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ==================== VÉHICULES ====================
+
+model Vehicule {
+  id                String   @id @default(cuid())
+  immatriculation   String   @unique
+  marque            String
+  modele            String
+  annee             Int
+  typeCarburant     TypeCarburant @default(DIESEL)
+  capacite          Int
+  kilometrage       Int      @default(0)
+  actif             Boolean  @default(true)
+  chauffeurId       String?
+  chauffeur         Chauffeur? @relation(fields: [chauffeurId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  entretiens        Entretien[]
+  pleinsCarburant   PleinCarburant[]
+  documents         DocumentVehicule[]
+  services          ServiceVehicule[]
+  achat             AchatVehicule?
+  charges           Charge[]
+  exploitations     ExploitationService[]
+}
+
+enum TypeCarburant {
+  DIESEL
+  ESSENCE
+}
+
+model Entretien {
+  id                String   @id @default(cuid())
+  vehiculeId        String
+  vehicule          Vehicule @relation(fields: [vehiculeId], references: [id])
+  type              String   // Type d'entretien (enum ou personnalisé)
+  description       String?
+  cout              Float
+  kilometrage       Int?
+  dateIntervention  DateTime
+  prochainKm        Int?
+  prochaineDate     DateTime?
+  alerteEnvoyee     Boolean  @default(false)
+  createdAt         DateTime @default(now())
+}
+
+// Types d'entretien personnalisés (configurables par l'utilisateur)
+model TypeEntretienPersonnalise {
+  id          String   @id @default(cuid())
+  code        String   @unique   // Code unique (ex: "VIDANGE", "COURROIE")
+  nom         String             // Nom affiché (ex: "Vidange", "Courroie de distribution")
+  description String?
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PleinCarburant {
+  id            String   @id @default(cuid())
+  vehiculeId    String
+  vehicule      Vehicule @relation(fields: [vehiculeId], references: [id])
+  quantite      Float    // en litres
+  prixUnitaire  Float
+  prixTotal     Float
+  station       String?
+  kilometrage   Int
+  date          DateTime
+  createdAt     DateTime @default(now())
+}
+
+model DocumentVehicule {
+  id                String   @id @default(cuid())
+  vehiculeId        String
+  vehicule          Vehicule @relation(fields: [vehiculeId], references: [id])
+  type              String   // Code du type (prédéfini ou personnalisé)
+  numero            String?
+  dateEmission      DateTime?
+  dateExpiration    DateTime?
+  fichier           String?
+  alerteEnvoyee     Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ==================== ACHAT VÉHICULE ====================
+
+model AchatVehicule {
+  id                String   @id @default(cuid())
+  vehiculeId        String   @unique
+  vehicule          Vehicule @relation(fields: [vehiculeId], references: [id])
+  typeAchat         TypeAchat            // COMPTANT ou CREDIT
+  dateAchat         DateTime
+  montantTotal      Float                // Prix total du véhicule
+  acompte           Float    @default(0) // Acompte versé (pour les deux types)
+  fournisseur       String?              // Nom du fournisseur/garage
+  adresseFournisseur String?             // Adresse du fournisseur
+  telephoneFournisseur String?           // Téléphone du fournisseur
+  numeroFacture     String?              // N° Facture d'achat
+  observations      String?              // Notes diverses
+  
+  // Champs spécifiques au crédit
+  nombreEcheances   Int?                 // Nombre total d'échéances (si crédit)
+  montantEcheance   Float?               // Montant de chaque échéance (si crédit)
+  datePremiereEcheance DateTime?         // Date de la première échéance (si crédit)
+  frequencePaiement FrequencePaiement?   // Fréquence des paiements (si crédit)
+  
+  // Statut
+  statut            StatutAchat @default(EN_COURS)
+  montantPaye       Float    @default(0) // Total déjà payé
+  montantRestant    Float    @default(0) // Montant restant à payer
+  dateDernierPaiement DateTime?          // Date du dernier paiement
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  echeances         EcheanceCredit[]
+  paiementsAchat    PaiementAchat[]
+}
+
+enum TypeAchat {
+  COMPTANT          // Achat au comptant (paiement intégral)
+  CREDIT            // Achat à crédit
+}
+
+enum FrequencePaiement {
+  MENSUEL           // Paiement mensuel
+  TRIMESTRIEL       // Paiement trimestriel
+  SEMESTRIEL        // Paiement semestriel
+  ANNUEL            // Paiement annuel
+}
+
+enum StatutAchat {
+  EN_COURS          // Achat en cours de paiement
+  SOLDE             // Achat entièrement payé
+  ANNULE            // Achat annulé
+}
+
+// Échéances de crédit (pour le suivi des paiements programmés)
+model EcheanceCredit {
+  id                String   @id @default(cuid())
+  achatVehiculeId   String
+  achatVehicule     AchatVehicule @relation(fields: [achatVehiculeId], references: [id])
+  numeroEcheance    Int                  // Numéro de l'échéance (1, 2, 3...)
+  dateEcheance      DateTime             // Date prévue de l'échéance
+  montantEcheance   Float                // Montant de l'échéance
+  montantPaye       Float    @default(0) // Montant payé pour cette échéance
+  datePaiement      DateTime?            // Date effective du paiement
+  statut            StatutEcheance @default(EN_ATTENTE)
+  observations      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum StatutEcheance {
+  EN_ATTENTE        // Échéance en attente de paiement
+  PAYEE             // Échéance payée
+  PARTIELLEMENT     // Partiellement payée
+  EN_RETARD         // Échéance en retard
+}
+
+// Paiements effectués pour l'achat (historique)
+model PaiementAchat {
+  id                String   @id @default(cuid())
+  achatVehiculeId   String
+  achatVehicule     AchatVehicule @relation(fields: [achatVehiculeId], references: [id])
+  datePaiement      DateTime
+  montant           Float
+  modePaiement      ModePaiementAchat
+  reference         String?              // N° chèque, virement, etc.
+  observations      String?
+  createdAt         DateTime @default(now())
+}
+
+enum ModePaiementAchat {
+  ESPECES
+  CHEQUE
+  VIREMENT
+  CARTE
+  PRELEVEMENT
+}
+
+// ==================== CLIENTS ====================
+
+model Client {
+  id                String   @id @default(cuid())
+  nomEntreprise     String
+  contact           String?
+  telephone         String
+  email             String?
+  adresse           String?
+  typeContrat       TypeContratClient
+  dateFinContrat    DateTime?  // Date de fin de contrat
+  alerteEnvoyee     Boolean  @default(false)  // Alerte d'expiration envoyée
+  actif             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  services          Service[]
+  factures          Facture[]
+  paiements         Paiement[]
+  exploitations     ExploitationService[]
+}
+
+enum TypeContratClient {
+  MENSUEL
+  ANNUEL
+  PONCTUEL
+}
+
+model Service {
+  id                String        @id @default(cuid())
+  clientId          String
+  client            Client        @relation(fields: [clientId], references: [id])
+  typeService       TypeService
+  nomService        String                              // Nom du service ou trajet
+  description       String?
+  lieuDepart        String?                             // Lieu de départ
+  lieuArrive        String?                             // Lieu d'arrivée
+  heureDepart       String?                             // Heure de départ (format HH:MM)
+  tarif             Float                               // Tarif du trajet ou service
+  nombreSalariesMin Int           @default(1)           // Nombre minimal de salariés
+  actif             Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relations
+  vehicules         ServiceVehicule[]
+  tournées          Tournee[]
+  exploitations     ExploitationService[]
+}
+
+enum TypeService {
+  TRAJET_JOURNALIER      // Trajet journalier régulier
+  SERVICE_EXCEPTIONNEL   // Service exceptionnel ponctuel
+}
+
+model ServiceVehicule {
+  serviceId         String
+  vehiculeId        String
+  service           Service @relation(fields: [serviceId], references: [id])
+  vehicule          Vehicule @relation(fields: [vehiculeId], references: [id])
+  createdAt         DateTime @default(now())
+
+  @@id([serviceId, vehiculeId])
+}
+
+model Tournee {
+  id            String   @id @default(cuid())
+  serviceId     String
+  service       Service @relation(fields: [serviceId], references: [id])
+  chauffeurId   String
+  chauffeur     Chauffeur @relation(fields: [chauffeurId], references: [id])
+  date          DateTime
+  completed     Boolean  @default(false)
+  notes         String?
+  createdAt     DateTime @default(now())
+}
+
+// ==================== EXPLOITATION SERVICES ====================
+
+enum EtatPaiement {
+  NON_PAYE
+  PAYE
+}
+
+enum StatutService {
+  EN_ATTENTE      // Service en attente d'exploitation
+  EN_COURS        // Service en cours par le chauffeur
+  TERMINE         // Service terminé
+}
+
+model ExploitationService {
+  id                String        @id @default(cuid())
+  clientId          String                              // Client
+  client            Client @relation(fields: [clientId], references: [id])
+  serviceId         String                              // Service/Trajet du client
+  service           Service @relation(fields: [serviceId], references: [id])
+  vehiculeId        String                              // Véhicule utilisé
+  vehicule          Vehicule @relation(fields: [vehiculeId], references: [id])
+  chauffeurId       String                              // Chauffeur (assigné ou autre)
+  chauffeur         Chauffeur @relation(fields: [chauffeurId], references: [id])
+  dateHeureDepart   DateTime @default(now())            // Date et heure de départ
+  nombreSalaries    Int       @default(1)               // Nombre de salariés transportés
+  statut            StatutService @default(EN_ATTENTE)  // Statut du service
+  completed         Boolean   @default(false)           // Service effectué
+  etatPaiement      EtatPaiement @default(NON_PAYE)     // État de paiement
+  factureId         String?                             // Facture associée (si facturée)
+  facture           Facture? @relation(fields: [factureId], references: [id])
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ==================== FACTURATION ====================
+
+model Facture {
+  id                String   @id @default(cuid())
+  numero            String   @unique
+  clientId          String
+  client            Client @relation(fields: [clientId], references: [id])
+  dateEmission      DateTime
+  dateEcheance      DateTime
+  montantHT         Float
+  tauxTVA           Float    @default(20)
+  montantTVA        Float
+  montantTTC        Float
+  statut            StatutFacture @default(EN_ATTENTE)
+  rappelsEnvoyes    Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  paiements         Paiement[]
+  exploitations     ExploitationService[]   // Services facturés
+}
+
+enum StatutFacture {
+  EN_ATTENTE
+  PAYEE
+  EN_RETARD
+  ANNULEE
+}
+
+model Paiement {
+  id            String   @id @default(cuid())
+  factureId     String
+  facture       Facture @relation(fields: [factureId], references: [id])
+  clientId      String
+  client        Client @relation(fields: [clientId], references: [id])
+  montant       Float
+  mode          ModePaiement
+  reference     String?
+  date          DateTime
+  createdAt     DateTime @default(now())
+}
+
+enum ModePaiement {
+  ESPECES
+  VIREMENT
+  CHEQUE
+}
+
+// ==================== ALERTES ====================
+
+model Alerte {
+  id          String   @id @default(cuid())
+  type        TypeAlerte
+  titre       String
+  message     String
+  priority    PrioriteAlerte
+  lu          Boolean  @default(false)
+  resolute    Boolean  @default(false)
+  referenceId String?  // ID de l'élément concerné
+  createdAt   DateTime @default(now())
+}
+
+enum TypeAlerte {
+  ASSURANCE_VEHICULE_EXPIREE
+  PERMIS_CHAUFFEUR_EXPIRE
+  VISITE_TECHNIQUE_PROCHE
+  ENTRETIEN_A_VENIR
+  FACTURE_IMPAYEE
+  DOCUMENT_EXPIRE
+  CONTRAT_FIN_PROCHE
+  CONTRAT_CLIENT_EXPIRATION  // Expiration de contrat client
+}
+
+enum PrioriteAlerte {
+  HAUTE
+  MOYENNE
+  BASSE
+}
+
+// ==================== CHARGES ====================
+
+model Charge {
+  id                String   @id @default(cuid())
+  type              TypeCharge             // VEHICULE ou SOCIETE
+  categorie         String                 // Code de la catégorie (enum ou personnalisé)
+  description       String
+  montant           Float
+  dateCharge        DateTime
+  
+  // Pour les charges véhicules
+  vehiculeId        String?
+  vehicule          Vehicule? @relation(fields: [vehiculeId], references: [id])
+  
+  // Source automatique ou manuelle
+  automatique       Boolean  @default(false)   // true = généré automatiquement, false = ajouté manuellement
+  sourceType        SourceCharge?              // Source de la charge (SALAIRE, PLEIN, ENTRETIEN, MANUEL)
+  sourceId          String?                    // ID de l'élément source (salaireId, pleinId, entretienId)
+  chauffeurId       String?                    // Pour les charges salaires (lien vers le chauffeur)
+  
+  // Informations supplémentaires (pour charges manuelles)
+  fournisseur       String?                // Nom du fournisseur
+  numeroFacture     String?                // N° Facture
+  fichier           String?                // Chemin du fichier justificatif
+  notes             String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum TypeCharge {
+  VEHICULE           // Charge liée à un véhicule
+  SOCIETE            // Charge générale de la société
+}
+
+// Catégories automatiques (générées par le système)
+// Les catégories manuelles sont gérées via CategorieChargePersonnalise
+enum CategorieChargeAuto {
+  // Catégories automatiques véhicules
+  CARBURANT              // Depuis pleins carburant
+  ENTRETIEN_VEHICULE     // Depuis entretiens
+  ACHAT_VEHICULE         // Depuis achats véhicules (comptant)
+  ECHEANCE_CREDIT        // Depuis paiements d'échéances crédit
+  
+  // Catégories automatiques société
+  SALAIRES               // Depuis salaires payés
+  CHARGES_SOCIALES       // CNSS + Assurance chauffeurs
+}
+
+enum SourceCharge {
+  SALAIRE            // Généré depuis un salaire payé
+  PLEIN_CARBURANT    // Généré depuis un plein de carburant
+  ENTRETIEN          // Généré depuis un entretien
+  ACHAT_VEHICULE     // Généré depuis un achat de véhicule (comptant)
+  ECHEANCE_CREDIT    // Généré depuis un paiement d'échéance
+  MANUEL             // Ajouté manuellement par l'utilisateur
+}
+
+// Catégories de charges personnalisées (configurables par l'utilisateur)
+model CategorieChargePersonnalise {
+  id          String      @id @default(cuid())
+  code        String      @unique   // Code unique (ex: "ASSURANCE_VEHICULE", "LOYER")
+  nom         String                // Nom affiché (ex: "Assurance véhicule", "Loyer")
+  type        TypeCharge            // VEHICULE ou SOCIETE
+  description String?
+  actif       Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+// ==================== PARAMÈTRES ====================
+
+model Parametre {
+  id        String   @id @default(cuid())
+  cle       String   @unique
+  valeur    String
+  updatedAt DateTime @updatedAt
+}
+
+// ==================== BULLETINS DE PAIE ====================
+
+model BulletinPaie {
+  id                  String   @id @default(cuid())
+  chauffeurId         String
+  chauffeur           Chauffeur @relation(fields: [chauffeurId], references: [id])
+  mois                Int
+  annee               Int
+  
+  // Éléments de salaire
+  salaireBase         Float    // Salaire de base
+  heuresSupplementaires Float  @default(0)  // Heures supplémentaires
+  primeTrajet         Float    @default(0)  // Prime de trajet
+  primeRendement      Float    @default(0)  // Prime de rendement
+  indemniteDeplacement Float   @default(0)  // Indemnité de déplacement
+  indemnitePanier     Float    @default(0)  // Indemnité panier
+  autresPrimes        Float    @default(0)  // Autres primes
+  
+  // Totaux
+  salaireBrut         Float    // Salaire brut
+  
+  // Retenues
+  cnss                Float    @default(0)  // Cotisation CNSS
+  amo                 Float    @default(0)  // Assurance Maladie Obligatoire
+  ir                  Float    @default(0)  // Impôt sur le revenu
+  avanceSalaire       Float    @default(0)  // Avance sur salaire
+  autresRetenues      Float    @default(0)  // Autres retenues
+  
+  totalRetenues       Float    // Total des retenues
+  salaireNet          Float    // Salaire net à payer
+  
+  // Métadonnées
+  dateGeneration      DateTime @default(now())
+  imprime            Boolean  @default(false)
+  dateImpression     DateTime?
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([chauffeurId, mois, annee])
+}
+
+// ==================== ENTREPRISE ====================
+
+model Entreprise {
+  id              String   @id @default(cuid())
+  nom             String                    // Nom de l'entreprise
+  logo            String?                   // Chemin du logo
+  adresse         String?                   // Adresse complète
+  telephone       String?                   // Téléphone
+  email           String?                   // Email
+  siteWeb         String?                   // Site web
+  siret           String?                   // Numéro SIRET/ICE
+  tvaIntracommunautaire String?             // Numéro TVA intracommunautaire
+  rib             String?                   // RIB bancaire
+  banque          String?                   // Nom de la banque
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
