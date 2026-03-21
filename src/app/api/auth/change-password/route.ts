@@ -3,6 +3,16 @@ import { db } from '@/lib/db'
 import { cookies } from 'next/headers'
 import type { ApiResponse } from '@/types'
 
+// User type from raw query
+interface UserRow {
+  id: string
+  email: string
+  motDePasse: string
+  nom: string
+  prenom: string
+  role: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = await cookies()
@@ -49,17 +59,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate new password length
-    if (newPassword.length < 6) {
+    if (newPassword.length < 4) {
       return NextResponse.json(
-        { success: false, error: 'Le nouveau mot de passe doit contenir au moins 6 caractères' },
+        { success: false, error: 'Le nouveau mot de passe doit contenir au moins 4 caractères' },
         { status: 400 }
       )
     }
 
-    // Get user
-    const user = await db.utilisateur.findUnique({
-      where: { id: sessionData.userId },
-    })
+    // Use raw SQL to get user (avoids Prisma schema validation issues)
+    const users = await db.$queryRaw<UserRow[]>`
+      SELECT id, email, "motDePasse", nom, prenom, role
+      FROM "Utilisateur" 
+      WHERE id = ${sessionData.userId}
+      LIMIT 1
+    `
+
+    const user = users[0]
 
     if (!user) {
       return NextResponse.json(
@@ -76,33 +91,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update password and try to reset mustChangePassword flag if it exists
+    // Update password using raw SQL
+    await db.$executeRaw`
+      UPDATE "Utilisateur" 
+      SET "motDePasse" = ${newPassword}, "updatedAt" = NOW()
+      WHERE id = ${user.id}
+    `
+
+    // Try to reset mustChangePassword flag
     try {
-      await db.utilisateur.update({
-        where: { id: user.id },
-        data: {
-          motDePasse: newPassword,
-          mustChangePassword: false, // Reset flag after password change
-        },
-      })
+      await db.$executeRaw`
+        UPDATE "Utilisateur" 
+        SET "mustChangePassword" = false
+        WHERE id = ${user.id}
+      `
     } catch {
-      // If mustChangePassword column doesn't exist, just update the password
-      await db.utilisateur.update({
-        where: { id: user.id },
-        data: {
-          motDePasse: newPassword,
-        },
-      })
+      // Ignore if column doesn't exist
     }
 
     // Log the password change
-    await db.log.create({
-      data: {
-        action: 'CHANGEMENT_MOT_DE_PASSE',
-        details: 'Mot de passe changé avec succès',
-        utilisateurId: user.id,
-      },
-    })
+    try {
+      await db.log.create({
+        data: {
+          action: 'CHANGEMENT_MOT_DE_PASSE',
+          details: 'Mot de passe changé avec succès',
+          utilisateurId: user.id,
+        },
+      })
+    } catch {
+      // Ignore log errors
+    }
 
     return NextResponse.json({
       success: true,

@@ -278,46 +278,34 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       },
     });
     
-    // Create default user account for the chauffeur
+    // Create default user account for the chauffeur using raw SQL
     const defaultPassword = '1234'; // Default password for new chauffeurs
     const userEmail = `${nom.toLowerCase()}.${prenom.toLowerCase()}@mgktransport.ma`;
     
     try {
-      // Check if email already exists
-      const existingUser = await db.utilisateur.findUnique({
-        where: { email: userEmail },
-      });
+      // Check if email already exists using raw SQL
+      const existingUsers = await db.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Utilisateur" WHERE email = ${userEmail} LIMIT 1
+      `;
       
-      if (!existingUser) {
+      if (existingUsers.length === 0) {
+        // Generate user ID
+        const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        
+        // Create user with raw SQL (includes mustChangePassword)
         try {
-          // Try with mustChangePassword field first
-          await db.utilisateur.create({
-            data: {
-              email: userEmail,
-              motDePasse: defaultPassword,
-              nom,
-              prenom,
-              role: 'CHAUFFEUR',
-              actif: body.actif ?? true,
-              chauffeurId: chauffeur.id,
-              mustChangePassword: true, // Force password change on first login
-            },
-          });
+          await db.$executeRaw`
+            INSERT INTO "Utilisateur" (id, email, "motDePasse", nom, prenom, role, actif, "chauffeurId", "mustChangePassword", "createdAt", "updatedAt")
+            VALUES (${userId}, ${userEmail}, ${defaultPassword}, ${nom}, ${prenom}, 'CHAUFFEUR', ${body.actif ?? true}, ${chauffeur.id}, true, NOW(), NOW())
+          `;
         } catch {
-          // If mustChangePassword column doesn't exist, create without it
-          await db.utilisateur.create({
-            data: {
-              email: userEmail,
-              motDePasse: defaultPassword,
-              nom,
-              prenom,
-              role: 'CHAUFFEUR',
-              actif: body.actif ?? true,
-              chauffeurId: chauffeur.id,
-            },
-          });
+          // Try without mustChangePassword column if it fails
+          await db.$executeRaw`
+            INSERT INTO "Utilisateur" (id, email, "motDePasse", nom, prenom, role, actif, "chauffeurId", "createdAt", "updatedAt")
+            VALUES (${userId}, ${userEmail}, ${defaultPassword}, ${nom}, ${prenom}, 'CHAUFFEUR', ${body.actif ?? true}, ${chauffeur.id}, NOW(), NOW())
+          `;
         }
-        console.log(`Compte utilisateur créé pour le chauffeur: ${userEmail}`);
+        console.log(`Compte utilisateur créé pour le chauffeur: ${userEmail} avec mot de passe: ${defaultPassword}`);
       }
     } catch (userError) {
       console.error('Erreur lors de la création du compte utilisateur:', userError);

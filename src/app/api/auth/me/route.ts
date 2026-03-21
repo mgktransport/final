@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { cookies } from 'next/headers'
 
+// User type from raw query
+interface UserRow {
+  id: string
+  email: string
+  nom: string
+  prenom: string
+  role: string
+  actif: boolean
+  mustChangePassword?: boolean
+}
+
 export async function GET() {
   try {
     const cookieStore = await cookies()
@@ -44,10 +55,15 @@ export async function GET() {
       })
     }
 
-    // Get user
-    const user = await db.utilisateur.findUnique({
-      where: { id: sessionData.userId },
-    })
+    // Use raw SQL to get user (avoids Prisma schema validation issues)
+    const users = await db.$queryRaw<UserRow[]>`
+      SELECT id, email, nom, prenom, role, actif, "mustChangePassword"
+      FROM "Utilisateur" 
+      WHERE id = ${sessionData.userId}
+      LIMIT 1
+    `
+
+    const user = users[0]
 
     if (!user || !user.actif) {
       cookieStore.delete('session_token')
@@ -65,7 +81,7 @@ export async function GET() {
         nom: user.nom,
         prenom: user.prenom,
         role: user.role,
-        mustChangePassword: (user as Record<string, unknown>).mustChangePassword || false,
+        mustChangePassword: user.mustChangePassword || false,
       },
     })
   } catch (error) {

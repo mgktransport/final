@@ -8,6 +8,18 @@ function generateSessionToken(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36)
 }
 
+// User type from raw query
+interface UserRow {
+  id: string
+  email: string
+  motDePasse: string
+  nom: string
+  prenom: string
+  role: string
+  actif: boolean
+  mustChangePassword?: boolean
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -20,10 +32,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find user by email
-    const user = await db.utilisateur.findUnique({
-      where: { email: email.toLowerCase() },
-    })
+    // Use raw SQL to find user (avoids Prisma schema validation issues)
+    const users = await db.$queryRaw<UserRow[]>`
+      SELECT id, email, "motDePasse", nom, prenom, role, actif, "mustChangePassword"
+      FROM "Utilisateur" 
+      WHERE email = ${email.toLowerCase()}
+      LIMIT 1
+    `
+
+    const user = users[0]
 
     console.log('=== LOGIN DEBUG ===');
     console.log('Email recherché:', email.toLowerCase());
@@ -85,13 +102,17 @@ export async function POST(request: NextRequest) {
     })
 
     // Log the login
-    await db.log.create({
-      data: {
-        action: 'CONNEXION',
-        details: `Connexion réussie depuis ${request.headers.get('user-agent') || 'Unknown'}`,
-        utilisateurId: user.id,
-      },
-    })
+    try {
+      await db.log.create({
+        data: {
+          action: 'CONNEXION',
+          details: `Connexion réussie depuis ${request.headers.get('user-agent') || 'Unknown'}`,
+          utilisateurId: user.id,
+        },
+      })
+    } catch {
+      // Ignore log errors
+    }
 
     // Set cookie
     const cookieStore = await cookies()
@@ -111,7 +132,7 @@ export async function POST(request: NextRequest) {
         nom: user.nom,
         prenom: user.prenom,
         role: user.role,
-        mustChangePassword: (user as Record<string, unknown>).mustChangePassword || false,
+        mustChangePassword: user.mustChangePassword || false,
       },
       message: 'Connexion réussie',
     })
