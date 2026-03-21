@@ -93,16 +93,19 @@ async function generateFacture(data: {
   tauxTVA: number;
   exploitationIds?: string[];
 }) {
+  console.log('[FACTURE] generateFacture called with:', data);
   const res = await fetch('/api/factures/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  console.log('[FACTURE] Response status:', res.status);
+  const result = await res.json();
+  console.log('[FACTURE] Response data:', result);
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || 'Erreur lors de la génération');
+    throw new Error(result.error || 'Erreur lors de la génération');
   }
-  return res.json();
+  return result;
 }
 
 // Fetch facture services for editing
@@ -190,16 +193,20 @@ export function FactureForm({
   const generateMutation = useMutation({
     mutationFn: generateFacture,
     onSuccess: (result) => {
+      console.log('[FACTURE] Generate result:', result);
       if (result.success && result.data) {
         toast.success(result.message || "Facture générée avec succès");
         queryClient.invalidateQueries({ queryKey: ['factures'] });
         queryClient.invalidateQueries({ queryKey: ['unpaid-exploitations'] });
         queryClient.invalidateQueries({ queryKey: ['exploitations'] });
         onSuccess?.(result.data);
+      } else {
+        toast.error(result.error || "Erreur lors de la génération de la facture");
       }
     },
     onError: (error: Error) => {
-      toast.error(error.message);
+      console.error('[FACTURE] Generate error:', error);
+      toast.error(error.message || "Erreur lors de la génération de la facture");
     },
   });
 
@@ -383,6 +390,12 @@ export function FactureForm({
 
   // Auto generate submit
   const onAutoGenerate = () => {
+    console.log('[FACTURE] onAutoGenerate called');
+    console.log('[FACTURE] selectedClientId:', selectedClientId);
+    console.log('[FACTURE] selectedExploitationIds size:', selectedExploitationIds.size);
+    console.log('[FACTURE] dateEcheance:', watch("dateEcheance"));
+    console.log('[FACTURE] tauxTVA:', tauxTVA);
+    
     if (!selectedClientId) {
       toast.error("Veuillez sélectionner un client");
       return;
@@ -396,6 +409,13 @@ export function FactureForm({
       toast.error("Veuillez définir une date d'échéance");
       return;
     }
+
+    console.log('[FACTURE] Calling generateMutation.mutate with:', {
+      clientId: selectedClientId,
+      dateEcheance,
+      tauxTVA: tauxTVA,
+      exploitationIds: Array.from(selectedExploitationIds),
+    });
 
     generateMutation.mutate({
       clientId: selectedClientId,

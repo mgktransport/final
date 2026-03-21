@@ -31,11 +31,15 @@ async function generateInvoiceNumber(): Promise<string> {
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<Facture>>> {
   try {
     const body = await request.json();
+    console.log('[API FACTURES GENERATE] Request body:', body);
     
     // Validate required fields
     const { clientId, dateEcheance, tauxTVA, exploitationIds } = body;
     
+    console.log('[API FACTURES GENERATE] Extracted values:', { clientId, dateEcheance, tauxTVA, exploitationIds });
+    
     if (!clientId || !dateEcheance) {
+      console.log('[API FACTURES GENERATE] Missing required fields');
       return NextResponse.json(
         { success: false, error: 'Client et date d\'échéance requis' },
         { status: 400 }
