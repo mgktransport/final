@@ -320,6 +320,41 @@ export async function resolveDocumentAlert(documentId: string): Promise<void> {
   });
 }
 
+// Generic function to resolve all alerts by reference ID
+export async function resolveAlertsByReference(referenceId: string): Promise<void> {
+  await db.alerte.updateMany({
+    where: {
+      referenceId,
+      resolute: false,
+    },
+    data: {
+      resolute: true,
+    },
+  });
+}
+
+// Generic alert creation interface
+export interface CreateAlertParams {
+  type: TypeAlerte;
+  titre: string;
+  message: string;
+  priority: PrioriteAlerte;
+  referenceId?: string;
+}
+
+// Generic function to create an alert
+export async function createAlert(params: CreateAlertParams): Promise<void> {
+  await db.alerte.create({
+    data: {
+      type: params.type,
+      titre: params.titre,
+      message: params.message,
+      priority: params.priority,
+      referenceId: params.referenceId,
+    },
+  });
+}
+
 // Check factures for late payment alerts
 export async function checkFactureAlerts(): Promise<number> {
   // Get notification settings

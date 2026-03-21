@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { TypeDocumentVehicule } from '@prisma/client'
+import { TypeDocumentVehicule, TypeAlerte, PrioriteAlerte } from '@prisma/client'
 import { createAlert, resolveAlertsByReference } from '@/lib/alerts'
 
 // PUT /api/vehicules/[id]/documents/[docId] - Modifier un document
@@ -64,12 +64,12 @@ export async function PUT(
         const diffDays = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         
         if (diffDays <= 30) {
-          const priority = diffDays <= 7 ? 'HAUTE' : 'MOYENNE'
+          const priority = diffDays <= 7 ? PrioriteAlerte.HAUTE : PrioriteAlerte.MOYENNE
           const typeAlerte = document.type === TypeDocumentVehicule.ASSURANCE 
-            ? 'ASSURANCE_VEHICULE_EXPIREE'
+            ? TypeAlerte.ASSURANCE_VEHICULE_EXPIREE
             : document.type === TypeDocumentVehicule.VISITE_TECHNIQUE
-              ? 'VISITE_TECHNIQUE_PROCHE'
-              : 'DOCUMENT_EXPIRE'
+              ? TypeAlerte.VISITE_TECHNIQUE_PROCHE
+              : TypeAlerte.DOCUMENT_EXPIRE
           
           await createAlert({
             type: typeAlerte,
