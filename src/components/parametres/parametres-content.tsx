@@ -2257,6 +2257,7 @@ function ReinitialisationSettings() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [confirmationText, setConfirmationText] = useState("");
   const [resetResults, setResetResults] = useState<Array<{ table: string; deleted: number }> | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   const reinitialiserMutation = useReinitialiser();
 
@@ -2273,19 +2274,21 @@ function ReinitialisationSettings() {
     try {
       const result = await reinitialiserMutation.mutateAsync();
       setResetResults(result.data?.results || null);
+      setResetSuccess(true);
       setResetDialogOpen(false);
       setConfirmationText("");
 
       toast({
-        title: "Succès",
-        description: "Application réinitialisée avec succès",
+        title: "✅ Réinitialisation terminée",
+        description: "Toutes les données ont été supprimées avec succès",
       });
 
       // Invalidate all queries
       queryClient.invalidateQueries();
     } catch (error: any) {
+      setResetSuccess(false);
       toast({
-        title: "Erreur",
+        title: "❌ Erreur",
         description: error.message || "Erreur lors de la réinitialisation",
         variant: "destructive",
       });
@@ -2375,33 +2378,49 @@ function ReinitialisationSettings() {
       </Button>
 
       {/* Results Card (shown after reset) */}
-      {resetResults && (
-        <Card className="border-green-200 bg-green-50/50">
+      {resetSuccess && resetResults && (
+        <Card className="border-green-300 bg-green-50">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2 text-green-700">
-              <CheckCircle className="h-5 w-5" />
-              Réinitialisation terminée
+              <CheckCircle className="h-6 w-6" />
+              ✅ Réinitialisation terminée avec succès !
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {resetResults.map((result, index) => (
-                result.deleted > 0 && (
-                  <div key={index} className="flex justify-between text-sm">
-                    <span>{result.table}</span>
-                    <span className="font-medium">{result.deleted} supprimé(s)</span>
-                  </div>
-                )
-              ))}
+            <div className="space-y-3">
+              <p className="text-green-800 font-medium">
+                Toutes les données ont été supprimées. Un compte administrateur a été créé automatiquement.
+              </p>
+              <div className="bg-white rounded-lg p-3 border border-green-200">
+                <p className="text-sm font-medium text-green-700 mb-2">Détails de la suppression :</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                  {resetResults.map((result, index) => (
+                    result.deleted > 0 && (
+                      <div key={index} className="flex justify-between p-2 bg-green-50 rounded border border-green-200">
+                        <span className="text-green-700">{result.table}</span>
+                        <Badge className="bg-green-600">{result.deleted}</Badge>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                <p className="text-sm font-medium text-blue-700 mb-1">📋 Informations de connexion :</p>
+                <p className="text-sm text-blue-600">Email : <code className="bg-blue-100 px-2 py-0.5 rounded">admin@mgktransport.ma</code></p>
+                <p className="text-sm text-blue-600">Mot de passe : <code className="bg-blue-100 px-2 py-0.5 rounded">admin123</code></p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4 border-green-300 text-green-700 hover:bg-green-100"
+                onClick={() => {
+                  setResetResults(null);
+                  setResetSuccess(false);
+                }}
+              >
+                Fermer
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => setResetResults(null)}
-            >
-              Fermer
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -2429,13 +2448,39 @@ function ReinitialisationSettings() {
                     onChange={(e) => setConfirmationText(e.target.value.toUpperCase())}
                     placeholder="REINITIALISER"
                     className="font-mono"
+                    disabled={reinitialiserMutation.isPending}
                   />
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          
+          {/* Loading Progress Bar */}
+          {reinitialiserMutation.isPending && (
+            <div className="space-y-3 py-4">
+              <div className="flex items-center justify-center gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-red-600" />
+                <span className="text-red-700 font-medium">Réinitialisation en cours...</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div className="bg-red-600 h-3 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+              </div>
+              <div className="text-center text-sm text-muted-foreground">
+                <p>Veuillez patienter, la suppression peut prendre quelques secondes...</p>
+              </div>
+              <div className="flex justify-center gap-2 text-xs text-muted-foreground">
+                <span className="px-2 py-1 bg-gray-100 rounded">Suppression</span>
+                <span className="px-2 py-1 bg-gray-100 rounded">Nettoyage</span>
+                <span className="px-2 py-1 bg-gray-100 rounded">Création admin</span>
+              </div>
+            </div>
+          )}
+          
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmationText("")}>
+            <AlertDialogCancel 
+              onClick={() => setConfirmationText("")}
+              disabled={reinitialiserMutation.isPending}
+            >
               Annuler
             </AlertDialogCancel>
             <AlertDialogAction
