@@ -71,7 +71,7 @@ export async function PUT(
   try {
     const { id: factureId } = await params;
     const body = await request.json();
-    const { exploitationIdsToAdd, exploitationIdsToRemove, tauxTVA } = body;
+    const { exploitationIdsToAdd, exploitationIdsToRemove, tauxTVA, dateEcheance } = body;
 
     // Vérifier que la facture existe et n'est pas payée
     const facture = await db.facture.findUnique({
@@ -139,15 +139,23 @@ export async function PUT(
       const montantTVA = montantHT * (newTauxTVA / 100);
       const montantTTC = montantHT + montantTVA;
 
+      // Préparer les données de mise à jour
+      const updateData: Record<string, unknown> = {
+        montantHT,
+        tauxTVA: newTauxTVA,
+        montantTVA,
+        montantTTC,
+      };
+
+      // Ajouter la date d'échéance si fournie
+      if (dateEcheance) {
+        updateData.dateEcheance = new Date(dateEcheance);
+      }
+
       // Mettre à jour la facture
       const updatedFacture = await tx.facture.update({
         where: { id: factureId },
-        data: {
-          montantHT,
-          tauxTVA: newTauxTVA,
-          montantTVA,
-          montantTTC,
-        },
+        data: updateData,
         include: {
           client: true,
           exploitations: {

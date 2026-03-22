@@ -121,6 +121,7 @@ async function updateFactureServices(data: {
   exploitationIdsToAdd?: string[];
   exploitationIdsToRemove?: string[];
   tauxTVA?: number;
+  dateEcheance?: string;
 }) {
   const res = await fetch(`/api/factures/${data.factureId}/services`, {
     method: 'PUT',
@@ -129,6 +130,7 @@ async function updateFactureServices(data: {
       exploitationIdsToAdd: data.exploitationIdsToAdd,
       exploitationIdsToRemove: data.exploitationIdsToRemove,
       tauxTVA: data.tauxTVA,
+      dateEcheance: data.dateEcheance,
     }),
   });
   if (!res.ok) {
@@ -429,21 +431,28 @@ export function FactureForm({
   const onUpdateServices = () => {
     if (!facture) return;
     
-    // Check if there are changes
-    if (servicesToAdd.size === 0 && servicesToRemove.size === 0) {
-      toast.info("Aucune modification à enregistrer");
-      return;
-    }
+    const dateEcheance = watch("dateEcheance");
 
     updateServicesMutation.mutate({
       factureId: facture.id,
       exploitationIdsToAdd: Array.from(servicesToAdd),
       exploitationIdsToRemove: Array.from(servicesToRemove),
       tauxTVA: tauxTVA,
+      dateEcheance: dateEcheance,
     });
   };
 
   const hasServiceChanges = servicesToAdd.size > 0 || servicesToRemove.size > 0;
+  
+  // Check if there are any changes (services, date, or TVA)
+  const hasAnyChanges = React.useMemo(() => {
+    if (!facture) return false;
+    const dateEcheance = watch("dateEcheance");
+    const currentDate = new Date(facture.dateEcheance).toISOString().split("T")[0];
+    const dateChanged = dateEcheance && dateEcheance !== currentDate;
+    const tvaChanged = tauxTVA !== facture.tauxTVA;
+    return hasServiceChanges || dateChanged || tvaChanged;
+  }, [facture, hasServiceChanges, watch, tauxTVA]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -905,7 +914,7 @@ export function FactureForm({
                 <Button
                   type="button"
                   onClick={onUpdateServices}
-                  disabled={updateServicesMutation.isPending || !hasServiceChanges}
+                  disabled={updateServicesMutation.isPending || !hasAnyChanges}
                   className="bg-[#0066cc] hover:bg-[#0066cc]/90"
                 >
                   {updateServicesMutation.isPending ? (
