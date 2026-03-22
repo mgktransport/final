@@ -2561,7 +2561,7 @@ export function ParametresContent() {
   const sectionOptions = [
     { value: "mon-profil", label: "Mon Profil", icon: User },
     { value: "entreprise", label: "Entreprise", icon: Building2 },
-    { value: "application", label: "Application", icon: Settings },
+    { value: "application", label: "Horaire d'application", icon: Settings },
     { value: "notifications", label: "Notifications", icon: Bell },
     { value: "utilisateurs", label: "Utilisateurs", icon: Users },
     { value: "docs-chauffeur", label: "Documents Chauffeurs", icon: User },
