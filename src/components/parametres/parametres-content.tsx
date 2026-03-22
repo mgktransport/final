@@ -2190,6 +2190,7 @@ function BackupSettings() {
               onChange={handleFileSelect}
               accept=".json"
               className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              disabled={isImporting}
             />
             {selectedFile && (
               <p className="mt-2 text-sm text-muted-foreground">
@@ -2197,11 +2198,35 @@ function BackupSettings() {
               </p>
             )}
           </div>
+          
+          {/* Loading Progress Bar */}
+          {isImporting && (
+            <div className="space-y-3 py-4">
+              <div className="flex items-center justify-center gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                <span className="text-blue-700 font-medium">Importation en cours...</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div className="bg-blue-600 h-3 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+              </div>
+              <div className="text-center text-sm text-muted-foreground">
+                <p>Veuillez patienter, l'importation peut prendre quelques secondes...</p>
+              </div>
+              <div className="flex justify-center gap-2 text-xs text-muted-foreground">
+                <span className="px-2 py-1 bg-gray-100 rounded">Lecture du fichier</span>
+                <span className="px-2 py-1 bg-gray-100 rounded">Nettoyage</span>
+                <span className="px-2 py-1 bg-gray-100 rounded">Importation</span>
+              </div>
+            </div>
+          )}
+          
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => {
-              setSelectedFile(null);
-              if (fileInputRef.current) fileInputRef.current.value = '';
-            }}>
+              if (!isImporting) {
+                setSelectedFile(null);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+              }
+            }} disabled={isImporting}>
               Annuler
             </AlertDialogCancel>
             <AlertDialogAction
@@ -2212,7 +2237,7 @@ function BackupSettings() {
               {isImporting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Import...
+                  Importation...
                 </>
               ) : (
                 "Importer"
