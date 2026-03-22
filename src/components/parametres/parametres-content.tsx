@@ -1886,6 +1886,305 @@ function EntrepriseSettings() {
   );
 }
 
+// Backup Settings Component
+function BackupSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importStats, setImportStats] = useState<Record<string, number> | null>(null);
+
+  // Export data
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/backup/export');
+      if (!response.ok) {
+        throw new Error('Erreur lors de l\'export');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mgk_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Succès",
+        description: "Sauvegarde téléchargée avec succès",
+      });
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Erreur lors de l'export des données",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.json')) {
+        toast({
+          title: "Erreur",
+          description: "Veuillez sélectionner un fichier JSON",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  // Import data
+  const handleImport = async () => {
+    if (!selectedFile) {
+      toast({
+        title: "Erreur",
+        description: "Veuillez sélectionner un fichier",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      
+      const response = await fetch('/api/backup/import', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erreur lors de l\'import');
+      }
+      
+      setImportStats(result.stats);
+      setImportDialogOpen(false);
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      
+      toast({
+        title: "Succès",
+        description: "Données importées avec succès",
+      });
+      
+      // Invalidate all queries to refresh data
+      queryClient.invalidateQueries();
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: error instanceof Error ? error.message : "Erreur lors de l'import des données",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          Sauvegarde et Importation
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Exportez ou importez les données de l&apos;application
+        </p>
+      </div>
+
+      {/* Export Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <RefreshCcw className="h-5 w-5 text-green-600" />
+            Exporter les données
+          </CardTitle>
+          <CardDescription>
+            Téléchargez une sauvegarde complète de toutes les données
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="space-y-1">
+              <p className="font-medium text-green-800">Sauvegarde complète</p>
+              <p className="text-sm text-green-700">
+                Exporte toutes les données : chauffeurs, véhicules, clients, factures, etc.
+              </p>
+            </div>
+            <Button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Export...
+                </>
+              ) : (
+                <>
+                  <Database className="h-4 w-4 mr-2" />
+                  Exporter
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Import Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Upload className="h-5 w-5 text-blue-600" />
+            Importer les données
+          </CardTitle>
+          <CardDescription>
+            Restaurer les données à partir d&apos;un fichier de sauvegarde
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Warning */}
+          <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-medium text-amber-800">Attention</p>
+              <p className="text-sm text-amber-700">
+                L&apos;importation remplacera toutes les données existantes. Assurez-vous d&apos;avoir fait une sauvegarde avant d&apos;importer.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="space-y-1">
+              <p className="font-medium text-blue-800">Restaurer une sauvegarde</p>
+              <p className="text-sm text-blue-700">
+                Sélectionnez un fichier de sauvegarde (.json)
+              </p>
+            </div>
+            <Button
+              onClick={() => setImportDialogOpen(true)}
+              variant="outline"
+              className="border-blue-300 text-blue-700 hover:bg-blue-100"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Importer
+            </Button>
+          </div>
+
+          {/* Import Stats */}
+          {importStats && (
+            <Card className="border-green-200 bg-green-50/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2 text-green-700">
+                  <CheckCircle className="h-5 w-5" />
+                  Importation réussie
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  {Object.entries(importStats).map(([key, value]) => (
+                    value > 0 && (
+                      <div key={key} className="flex justify-between p-2 bg-white rounded border">
+                        <span className="capitalize">{key}</span>
+                        <Badge variant="secondary">{value}</Badge>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Info Card */}
+      <Card className="border-blue-200 bg-blue-50/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="h-5 w-5 text-blue-600" />
+            Informations
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-blue-800">
+          <p>• La sauvegarde inclut toutes les données de l&apos;application</p>
+          <p>• Le fichier exporté est au format JSON</p>
+          <p>• Conservez vos sauvegardes dans un endroit sécurisé</p>
+          <p>• L&apos;importation remplacera toutes les données existantes</p>
+        </CardContent>
+      </Card>
+
+      {/* Import Dialog */}
+      <AlertDialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Importer les données</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sélectionnez un fichier de sauvegarde (.json). Cette action remplacera toutes les données existantes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              accept=".json"
+              className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            {selectedFile && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Fichier sélectionné : {selectedFile.name}
+              </p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setSelectedFile(null);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+            }}>
+              Annuler
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleImport}
+              disabled={!selectedFile || isImporting}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isImporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Import...
+                </>
+              ) : (
+                "Importer"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 // Reinitialisation Settings Component
 function ReinitialisationSettings() {
   const { toast } = useToast();
@@ -2269,6 +2568,7 @@ export function ParametresContent() {
     { value: "docs-vehicule", label: "Documents Véhicules", icon: Truck },
     { value: "types-entretien", label: "Types Entretiens", icon: Clock },
     { value: "categories-charges", label: "Catégories Charges", icon: CreditCard },
+    { value: "sauvegarde", label: "Sauvegarde", icon: Database },
     { value: "reinitialiser", label: "Réinitialiser", icon: Database, destructive: true },
   ];
 
@@ -2296,6 +2596,8 @@ export function ParametresContent() {
         return <TypesEntretienSettings />;
       case "categories-charges":
         return <CategoriesChargesSettings />;
+      case "sauvegarde":
+        return <BackupSettings />;
       case "reinitialiser":
         return <ReinitialisationSettings />;
       default:
