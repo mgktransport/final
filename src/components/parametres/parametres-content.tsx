@@ -1896,6 +1896,8 @@ function BackupSettings() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importStats, setImportStats] = useState<Record<string, number> | null>(null);
+  const [importSuccess, setImportSuccess] = useState<boolean | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   // Export data
   const handleExport = async () => {
@@ -1959,6 +1961,9 @@ function BackupSettings() {
     }
 
     setIsImporting(true);
+    setImportSuccess(null);
+    setImportError(null);
+    
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
@@ -1970,27 +1975,33 @@ function BackupSettings() {
       
       const result = await response.json();
       
-      if (!response.ok) {
+      if (!response.ok || !result.success) {
         throw new Error(result.error || 'Erreur lors de l\'import');
       }
       
       setImportStats(result.stats);
+      setImportSuccess(true);
       setImportDialogOpen(false);
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
       
+      // Calculate total imported
+      const total = Object.values(result.stats || {}).reduce((a: number, b: unknown) => a + (b as number), 0);
+      
       toast({
-        title: "Succès",
-        description: "Données importées avec succès",
+        title: "✅ Importation réussie",
+        description: `${total} enregistrements importés avec succès`,
       });
       
       // Invalidate all queries to refresh data
       queryClient.invalidateQueries();
     } catch (error) {
+      setImportSuccess(false);
+      setImportError(error instanceof Error ? error.message : "Erreur lors de l'import des données");
       toast({
-        title: "Erreur",
+        title: "❌ Erreur d'importation",
         description: error instanceof Error ? error.message : "Erreur lors de l'import des données",
         variant: "destructive",
       });
@@ -2092,26 +2103,55 @@ function BackupSettings() {
             </Button>
           </div>
 
-          {/* Import Stats */}
-          {importStats && (
-            <Card className="border-green-200 bg-green-50/50">
+          {/* Import Success Message */}
+          {importSuccess === true && importStats && (
+            <Card className="border-green-300 bg-green-50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2 text-green-700">
-                  <CheckCircle className="h-5 w-5" />
-                  Importation réussie
+                  <CheckCircle className="h-6 w-6" />
+                  ✅ Importation réussie !
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  {Object.entries(importStats).map(([key, value]) => (
-                    value > 0 && (
-                      <div key={key} className="flex justify-between p-2 bg-white rounded border">
-                        <span className="capitalize">{key}</span>
-                        <Badge variant="secondary">{value}</Badge>
-                      </div>
-                    )
-                  ))}
+                <div className="space-y-3">
+                  <p className="text-green-800 font-medium">
+                    Les données ont été restaurées avec succès.
+                  </p>
+                  <div className="bg-white rounded-lg p-3 border border-green-200">
+                    <p className="text-sm font-medium text-green-700 mb-2">Détails de l'importation :</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                      {Object.entries(importStats)
+                        .filter(([_, value]) => value > 0)
+                        .map(([key, value]) => (
+                          <div key={key} className="flex justify-between p-2 bg-green-50 rounded border border-green-200">
+                            <span className="capitalize text-green-700">{key}</span>
+                            <Badge className="bg-green-600">{value}</Badge>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  </div>
+                  <p className="text-xs text-green-600">
+                    Total : {Object.values(importStats).reduce((a: number, b: unknown) => a + (b as number), 0)} enregistrements importés
+                  </p>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Import Error Message */}
+          {importSuccess === false && (
+            <Card className="border-red-300 bg-red-50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2 text-red-700">
+                  <AlertTriangle className="h-6 w-6" />
+                  ❌ Erreur d'importation
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-red-800">
+                  {importError || "Une erreur s'est produite lors de l'importation des données."}
+                </p>
               </CardContent>
             </Card>
           )}
